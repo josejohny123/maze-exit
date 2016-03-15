@@ -1,0 +1,24 @@
+/home/cloudera/projects/webloganalysis/hive/UDFNumberRows.jar
+
+CREATE TEMPORARY FUNCTION rankRecord as 'hive.udfs.UDFNumberRows'
+
+
+select product_name,product_price1,rankRecord(product_price1) as PriceRank from
+(select product_name,round(product_price) product_price1
+from products order by product_price1) order
+
+	
+
+select product_name,product_price1,rankRecord(product_price1) as PriceRank from
+(select product_name,rankRecord(round(product_price) product_price1 from products order by product_price1 desc) order
+
+
+Lateral View Example
+
+hive> SELECT name, sub
+> FROM employees
+> LATERAL VIEW explode(subordinates) subView AS sub;
+John Doe Mary Smith
+John Doe Todd Jones
+Mary Smith Bill King
+

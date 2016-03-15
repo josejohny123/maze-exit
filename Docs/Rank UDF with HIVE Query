@@ -1,0 +1,146 @@
+Rank with hive
+
+So I wanted to do a few things.
+
+1) Promote a cool open source edition to hive by m6d (Rank UDF)
+2) Promote the upcoming "Programming Hive" book (that I am co-authoring)
+
+What better way then to give a preview of the m6d rank case study in the programming hive book?
+
+--M6d UDF Pseudo Rank--
+
+by David Ha and Rumit Patel
+
+Sorting data and identifying the top n elements is straightforward. You order the whole data set by some criteria and limit the result set to n. But there are times when you need to group like elements together and find the top n elements within that group only. For example, identifying the top ten requested songs for each recording artist or the top 100 best selling items per product category and country. Several database platforms define a rank() function that can support these scenarios, but until Hive provides an implementation, we can create a user-defined function to produce the results we want. We will call this function p_rank() for psuedo-rank, leaving the name rank() for the Hive implementation.
+
+Say we have the following product sales data and we want to see the top three items per category and country:
+
+|===============================
+|category       |country        |product        |sales
+|movies |us     |chewblanca     |100
+|movies |us     |war stars iv   |150
+|movies |us     |war stars iii  |200
+|movies |us     |star wreck     |300
+|movies |gb     |titanus        |100
+|movies |gb     |spiderella     |150
+|movies |gb     |war stars iii  |200
+|movies |gb     |war stars iv   |300
+|================================
+
+In most SQL systems :
+[source,sql]
+--------------------------
+SELECT
+ category,country,product,sales,rank
+FROM (
+ SELECT
+   category,country,product, sales,
+   rank() over (PARTITION BY category, country ORDER BY sales DESC) rank
+ FROM p_rank_demo) t
+WHERE rank <= 3
+-----------------------------
+
+To achieve the same result using HiveQL, the first step is partitioning the data into groups, which we can achieve using the distribute by clause. We must ensure that all rows with the same category and country are sent to the same reducer.
+
+[source,sql]
+--------------------------
+DISTRIBUTE BY
+ category,
+ country
+-------------------------
+
+The next step is ordering the data in each group by descending sales using the sort by clause. While order by effects a total ordering across all data, sort by affects the ordering of data on a specific reducer. You must repeat the partition columns named in the distribute by clause.
+
+[source,sql]
+--------------------------
+SORT BY
+ category,
+ country,
+ sales DESC
+--------------------------
+Putting everything together, we have:
+
+[source,sql]
+--------------------------
+ADD JAR p-rank-demo.jar;
+CREATE TEMPORARY FUNCTION p_rank AS 'demo.PsuedoRank';
+
+SELECT
+ category,country,product,sales,rank
+FROM (
+ SELECT
+   category,country,product,sales,
+   p_rank(category, country) rank
+ FROM (
+   SELECT
+     category,country,product,
+     sales
+   FROM p_rank_demo
+   DISTRIBUTE BY
+     category,country
+   SORT BY
+     category,country,sales desc) t1) t2
+WHERE rank <= 3
+----------------------------------
+
+There is a little more to the case study but I have to save something for the book... The code is here: 
+
+https://github.com/edwardcapriolo/hive-rank
+
+
+
+
+
+SELECT
+ category,country,product,sales,rank
+FROM (
+ SELECT
+   category,country,product,sales,
+   p_rank(category, country) rank
+ FROM (
+   SELECT
+     category,country,product,
+     sales
+   FROM p_rank_demo
+   DISTRIBUTE BY
+     category,country
+   SORT BY
+     category,country,sales desc) t1) t2
+WHERE rank <= 3
+
+
+
+select * from
+(select yearorder,monthorder,p_name,countsale ,rankRecord(yearorder,monthorder) rank from
+(select yearorder,monthorder,p_name,count(p_name) countsale from
+(select year(to_date(from_unixtime(o.order_date))) yearorder,month(to_date(from_unixtime(o.order_date))) monthorder,p.product_name p_name
+from orders o inner join order_items oi inner join products p
+where o.order_id=oi.order_item_order_id 
+and oi.order_item_product_id=p.product_id) salestable
+group by yearorder,monthorder,p_name) rankedtable
+DISTRIBUTE BY
+yearorder,monthorder
+SORT BY
+yearorder,monthorder,countsale desc) filterrank
+where rank<=3
+
+
+select * from
+(select category_name,p_name,countsale ,rankRecord(category_name) rank from
+
+(select category_name,p_name,count(p_name) countsale from
+(select category_name,p.product_name p_name
+from orders o inner join order_items oi inner join products p inner join categories c
+where o.order_id=oi.order_item_order_id
+and oi.order_item_product_id=p.product_id
+and p.product_category_id =c.category_id) salestable
+group by category_name,p_name
+) rankedtable
+DISTRIBUTE BY
+category_name
+SORT BY
+category_name,countsale desc) filterrank
+where rank<=3
+
+
+Enjoy! 
